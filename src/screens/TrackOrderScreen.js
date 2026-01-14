@@ -15,7 +15,7 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import { supabase } from '../services/supabase';
 import { getCurrentUser } from '../services/auth';
-import { getDepartments, moveOrder, moveOrderBackward } from '../services/orders';
+import { getDepartments } from '../services/orders';
 
 const isWeb = Platform.OS === 'web';
 
@@ -102,200 +102,188 @@ export default function TrackOrderScreen({ navigation }) {
     return true;
   };
 
-const handleTrackOrder = async () => {
-  // Validazioni
-  if (!itemCode.trim()) {
-    alertErrore('Errore', `Inserisci un numero ${itemType}`);
-    return;
-  }
-
-  if (!validateItemCode(itemType, itemCode)) {
-    return;
-  }
-
-  if (!fromDepartment) {
-    alertErrore('Errore', 'Seleziona il reparto di partenza');
-    return;
-  }
-
-  if (!toDepartment) {
-    alertErrore('Errore', 'Seleziona il reparto di destinazione');
-    return;
-  }
-
-  if (fromDepartment.id === toDepartment.id) {
-    alertErrore('Errore', 'I reparti di partenza e destinazione devono essere diversi');
-    return;
-  }
-
-  if (!currentUser) {
-    alertErrore('Errore', 'Utente non autenticato');
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    const upperCode = itemCode.toUpperCase();
-    console.log(`🔍 Cercando ${itemType}: ${upperCode}`);
-
-    let orderId = null;
-    let order = null;
-
-    // PASSO 1: Cerca se l'ordine esiste
-    if (itemType === 'ODL') {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, current_department_id')
-        .eq('order_number', upperCode)
-        .single();
-
-      if (data) {
-        orderId = data.id;
-        order = data;
-        console.log('✅ ODL trovato:', orderId);
-      } else {
-        console.log('⚠️ ODL non trovato, lo creerò');
-      }
-    } else if (itemType === 'JOB') {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, current_department_id')
-        .eq('job_number', upperCode)
-        .single();
-
-      if (data) {
-        orderId = data.id;
-        order = data;
-        console.log('✅ JOB trovato:', orderId);
-      } else {
-        console.log('⚠️ JOB non trovato, lo creerò');
-      }
-    } else if (itemType === 'STACCATO') {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, current_department_id')
-        .eq('staccato_number', upperCode)
-        .single();
-
-      if (data) {
-        orderId = data.id;
-        order = data;
-        console.log('✅ STACCATO trovato:', orderId);
-      } else {
-        console.log('⚠️ STACCATO non trovato, lo creerò');
-      }
+  const handleTrackOrder = async () => {
+    // Validazioni
+    if (!itemCode.trim()) {
+      alertErrore('Errore', `Inserisci un numero ${itemType}`);
+      return;
     }
 
-    // PASSO 2: Se l'ordine non esiste, crealo
-    if (!orderId) {
-      console.log('📦 Creazione nuovo ordine...');
-      
-      const newOrderData = {
-        order_number: itemType === 'ODL' ? upperCode : null,
-        job_number: itemType === 'JOB' ? upperCode : null,
-        staccato_number: itemType === 'STACCATO' ? upperCode : null,
-        starting_department_id: fromDepartment.id,
-        current_department_id: fromDepartment.id,
-        created_by: currentUser.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      const { data: createdOrder, error: createError } = await supabase
-        .from('orders')
-        .insert([newOrderData])
-        .select();
-
-      if (createError) {
-        console.error('❌ Errore creazione ordine:', createError);
-        throw createError;
-      }
-
-      if (!createdOrder || createdOrder.length === 0) {
-        console.error('❌ Nessun record creato!');
-        throw new Error('Errore: nessun record creato nella tabella orders');
-      }
-
-      orderId = createdOrder[0].id;
-      order = createdOrder[0];
-      console.log('✅ Ordine creato con ID:', orderId);
+    if (!validateItemCode(itemType, itemCode)) {
+      return;
     }
 
-    // PASSO 3: Aggiorna l'ordine nella tabella orders
-    if (orderId) {
-      const currentDeptId = order.current_department_id;
+    if (!fromDepartment) {
+      alertErrore('Errore', 'Seleziona il reparto di partenza');
+      return;
+    }
 
-      console.log(`🚀 Aggiornando ordine ${orderId} a reparto ${toDepartment.id}`);
+    if (!toDepartment) {
+      alertErrore('Errore', 'Seleziona il reparto di destinazione');
+      return;
+    }
 
-      const { error: updateError } = await supabase
-        .from('orders')
-        .update({
-          current_department_id: toDepartment.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', orderId);
+    if (fromDepartment.id === toDepartment.id) {
+      alertErrore('Errore', 'I reparti di partenza e destinazione devono essere diversi');
+      return;
+    }
 
-      if (updateError) {
-        console.error('❌ Errore aggiornamento ordine:', updateError);
-        throw updateError;
+    if (!currentUser) {
+      alertErrore('Errore', 'Utente non autenticato');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const upperCode = itemCode.toUpperCase();
+      console.log(`🔍 Cercando ${itemType}: ${upperCode}`);
+
+      let orderId = null;
+      let order = null;
+
+      // PASSO 1: Cerca se l'ordine esiste
+      if (itemType === 'ODL') {
+        const { data } = await supabase
+          .from('orders')
+          .select('id, current_department_id')
+          .eq('order_number', upperCode)
+          .single();
+
+        if (data) {
+          orderId = data.id;
+          order = data;
+          console.log('✅ ODL trovato:', orderId);
+        }
+      } else if (itemType === 'JOB') {
+        const { data } = await supabase
+          .from('orders')
+          .select('id, current_department_id')
+          .eq('job_number', upperCode)
+          .single();
+
+        if (data) {
+          orderId = data.id;
+          order = data;
+          console.log('✅ JOB trovato:', orderId);
+        }
+      } else if (itemType === 'STACCATO') {
+        const { data } = await supabase
+          .from('orders')
+          .select('id, current_department_id')
+          .eq('staccato_number', upperCode)
+          .single();
+
+        if (data) {
+          orderId = data.id;
+          order = data;
+          console.log('✅ STACCATO trovato:', orderId);
+        }
       }
 
-      // PASSO 4: Registra movimento in order_history CON NOMI LEGGIBILI
-      const { error: historyError } = await supabase
-        .from('order_history')
-        .insert({
-          // ID per relazioni
-          order_id: orderId,
-          from_department_id: fromDepartment.id,
-          to_department_id: toDepartment.id,
-          moved_by_user_id: currentUser.id,
-          
-          // Numeri identificativi
-          job_number: itemType === 'JOB' ? upperCode : null,
+      // PASSO 2: Se l'ordine non esiste, crealo
+      if (!orderId) {
+        console.log('📦 Creazione nuovo ordine...');
+        
+        const newOrderData = {
           order_number: itemType === 'ODL' ? upperCode : null,
+          job_number: itemType === 'JOB' ? upperCode : null,
           staccato_number: itemType === 'STACCATO' ? upperCode : null,
-          
-          // NOMI LEGGIBILI PER CSV
-          moved_by_name: currentUser?.full_name || currentUser?.username,
-          from_department_name: fromDepartment.name,
-          to_department_name: toDepartment.name,
-          
-          // Altri dati
-          operation_type: operation,
-          scarti: scarti ? parseInt(scarti) : 0,
-          note: note.trim() || null,
-          moved_at: new Date().toISOString(),
-        });
+          starting_department_id: fromDepartment.id,
+          current_department_id: fromDepartment.id,
+          created_by: currentUser.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
 
-      if (historyError) {
-        console.error('❌ Errore salvataggio storico:', historyError);
-        throw historyError;
+        const { data: createdOrder, error: createError } = await supabase
+          .from('orders')
+          .insert([newOrderData])
+          .select();
+
+        if (createError) {
+          console.error('❌ Errore creazione ordine:', createError);
+          throw createError;
+        }
+
+        if (!createdOrder || createdOrder.length === 0) {
+          throw new Error('Errore: nessun record creato nella tabella orders');
+        }
+
+        orderId = createdOrder[0].id;
+        order = createdOrder[0];
+        console.log('✅ Ordine creato con ID:', orderId);
       }
 
-      console.log('✅ Movimento registrato con successo');
+      // PASSO 3: Aggiorna l'ordine
+      if (orderId) {
+        const { error: updateError } = await supabase
+          .from('orders')
+          .update({
+            current_department_id: toDepartment.id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', orderId);
 
-      alertSuccesso(
-        'Successo!',
-        `${itemType} ${upperCode}\n${operation} da ${fromDepartment.name} a ${toDepartment.name}`
-      );
+        if (updateError) {
+          console.error('❌ Errore aggiornamento ordine:', updateError);
+          throw updateError;
+        }
 
-      // Reset form
-      setItemCode('');
-      setFromDepartment(null);
-      setToDepartment(null);
-      setScarti('');
-      setNote('');
+        // PASSO 4: Registra movimento in order_history CON NOMI LEGGIBILI
+        const { error: historyError } = await supabase
+          .from('order_history')
+          .insert({
+            // ID per relazioni
+            order_id: orderId,
+            from_department_id: fromDepartment.id,
+            to_department_id: toDepartment.id,
+            moved_by_user_id: currentUser.id,
+            
+            // Numeri identificativi
+            job_number: itemType === 'JOB' ? upperCode : null,
+            order_number: itemType === 'ODL' ? upperCode : null,
+            staccato_number: itemType === 'STACCATO' ? upperCode : null,
+            
+            // NOMI LEGGIBILI PER CSV
+            moved_by_name: currentUser?.full_name || currentUser?.username,
+            from_department_name: fromDepartment.name,
+            to_department_name: toDepartment.name,
+            
+            // Altri dati
+            operation_type: operation,
+            scarti: scarti ? parseInt(scarti) : 0,
+            note: note.trim() || null,
+            moved_at: new Date().toISOString(),
+          });
+
+        if (historyError) {
+          console.error('❌ Errore salvataggio storico:', historyError);
+          throw historyError;
+        }
+
+        console.log('✅ Movimento registrato con successo');
+
+        alertSuccesso(
+          'Successo!',
+          `${itemType} ${upperCode}\n${operation} da ${fromDepartment.name} a ${toDepartment.name}`
+        );
+
+        // Reset form
+        setItemCode('');
+        setFromDepartment(null);
+        setToDepartment(null);
+        setScarti('');
+        setNote('');
+      }
+
+    } catch (error) {
+      console.error('❌ Errore completo:', error);
+      alertErrore('Errore', error.message || 'Impossibile registrare il movimento');
+    } finally {
+      setLoading(false);
     }
-
-  } catch (error) {
-    console.error('❌ Errore completo:', error);
-    alertErrore('Errore', error.message || 'Impossibile registrare il movimento');
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -391,7 +379,7 @@ const handleTrackOrder = async () => {
             </TouchableOpacity>
           </View>
 
-          {/* Reparto di Partenza */}
+                  {/* Reparto di Partenza */}
           <Text style={styles.label}>Reparto di partenza</Text>
           <View style={styles.pickerContainer}>
             <Picker
@@ -651,3 +639,4 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 });
+
