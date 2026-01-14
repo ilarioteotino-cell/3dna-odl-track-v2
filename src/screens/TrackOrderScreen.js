@@ -10,6 +10,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { supabase } from '../services/supabase';
@@ -18,7 +19,6 @@ import { getDepartments, moveOrder, moveOrderBackward } from '../services/orders
 
 const isWeb = Platform.OS === 'web';
 
-// Helper functions per alert cross-platform
 const alertErrore = (title, message = '') => {
   if (isWeb) {
     alert(`${title}: ${message}`);
@@ -36,27 +36,16 @@ const alertSuccesso = (title, message = '') => {
 };
 
 export default function TrackOrderScreen({ navigation }) {
-  // Selezione tipo tracciamento
-  const [itemType, setItemType] = useState('ODL'); // ODL, JOB, STACCATO
+  const [itemType, setItemType] = useState('ODL');
   const [itemCode, setItemCode] = useState('');
-
-  // Selezione reparti
   const [departments, setDepartments] = useState([]);
   const [fromDepartment, setFromDepartment] = useState(null);
   const [toDepartment, setToDepartment] = useState(null);
-
-  // Tipo operazione
-  const [operation, setOperation] = useState('AVANZAMENTO'); // AVANZAMENTO o RETROCESSIONE
-
-  // Dati aggiuntivi
+  const [operation, setOperation] = useState('AVANZAMENTO');
   const [scarti, setScarti] = useState('');
   const [note, setNote] = useState('');
-
-  // Utente e stato
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // ============ INIT ============
 
   useEffect(() => {
     loadUser();
@@ -84,8 +73,6 @@ export default function TrackOrderScreen({ navigation }) {
       alertErrore('Errore', 'Impossibile caricare i reparti');
     }
   };
-
-  // ============ VALIDAZIONE ============
 
   const validateItemCode = (type, code) => {
     const upperCode = code.toUpperCase();
@@ -115,10 +102,7 @@ export default function TrackOrderScreen({ navigation }) {
     return true;
   };
 
-  // ============ REGISTRA MOVIMENTO ============
-
   const handleTrackOrder = async () => {
-    // Validazioni
     if (!itemCode.trim()) {
       alertErrore('Errore', `Inserisci un numero ${itemType}`);
       return;
@@ -154,12 +138,10 @@ export default function TrackOrderScreen({ navigation }) {
       const upperCode = itemCode.toUpperCase();
       console.log(`🔍 Cercando ${itemType}: ${upperCode}`);
 
-      // PASSO 1: Cerca se l'ordine esiste per numero
       let orderId = null;
       let order = null;
 
       if (itemType === 'ODL') {
-        // Cerca per order_number
         const { data, error } = await supabase
           .from('orders')
           .select('id, current_department_id')
@@ -174,7 +156,6 @@ export default function TrackOrderScreen({ navigation }) {
           console.log('⚠️ ODL non trovato, lo creerò');
         }
       } else if (itemType === 'JOB') {
-        // Cerca per job_number
         const { data, error } = await supabase
           .from('orders')
           .select('id, current_department_id')
@@ -189,7 +170,6 @@ export default function TrackOrderScreen({ navigation }) {
           console.log('⚠️ JOB non trovato, lo creerò');
         }
       } else if (itemType === 'STACCATO') {
-        // Cerca per staccato_number
         const { data, error } = await supabase
           .from('orders')
           .select('id, current_department_id')
@@ -205,7 +185,6 @@ export default function TrackOrderScreen({ navigation }) {
         }
       }
 
-      // PASSO 2: Se l'ordine non esiste, crealo
       if (!orderId) {
         console.log('📦 Creazione nuovo ordine...');
         
@@ -240,16 +219,13 @@ export default function TrackOrderScreen({ navigation }) {
         orderId = createdOrder[0].id;
         order = createdOrder[0];
         console.log('✅ Ordine creato con ID:', orderId);
-        console.log('✅ Dati inseriti:', createdOrder[0]);
       }
 
-      // PASSO 3: Sposta l'ordine tra reparti
       if (orderId) {
         const currentDeptId = order.current_department_id;
 
         console.log(`🚀 Spostando ordine ${orderId} da reparto ${currentDeptId} a ${toDepartment.id}`);
 
-        // Prepara i dati dell'ordine da passare a moveOrder
         const orderData = {
           order_number: itemType === 'ODL' ? upperCode : null,
           job_number: itemType === 'JOB' ? upperCode : null,
@@ -286,7 +262,6 @@ export default function TrackOrderScreen({ navigation }) {
           `${itemType} ${upperCode}\n${operation.toLowerCase()} da ${fromDepartment.name} a ${toDepartment.name}`
         );
 
-        // Reset form
         setItemCode('');
         setFromDepartment(null);
         setToDepartment(null);
@@ -302,185 +277,191 @@ export default function TrackOrderScreen({ navigation }) {
     }
   };
 
-  // ============ MAIN FORM ============
-
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.backButton}>← Indietro</Text>
+        </TouchableOpacity>
         <Text style={styles.title}>Traccia Ordine</Text>
+        <View style={{ width: 60 }} />
+      </View>
 
-        {/* Selezione Tipo */}
-        <Text style={styles.label}>Tipo di tracciamento</Text>
-        <View style={styles.typeSelector}>
-          {['JOB', 'ODL', 'STACCATO'].map((type) => (
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Selezione Tipo */}
+          <Text style={styles.label}>Tipo di tracciamento</Text>
+          <View style={styles.typeSelector}>
+            {['JOB', 'ODL', 'STACCATO'].map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={[styles.typeButton, itemType === type && styles.typeButtonActive]}
+                onPress={() => {
+                  setItemType(type);
+                  setItemCode('');
+                }}
+              >
+                <Text
+                  style={[
+                    styles.typeButtonText,
+                    itemType === type && styles.typeButtonTextActive,
+                  ]}
+                >
+                  {type}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Input Codice */}
+          <Text style={styles.label}>Numero {itemType}</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.input}
+              value={itemCode}
+              onChangeText={(text) => setItemCode(text.toUpperCase())}
+              placeholder={`Inserisci numero ${itemType}`}
+              placeholderTextColor="#999"
+              autoCapitalize="characters"
+              maxLength={itemType === 'ODL' ? 11 : 10}
+            />
+          </View>
+
+          {itemType === 'JOB' && <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>}
+          {itemType === 'STACCATO' && <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>}
+          {itemType === 'ODL' && <Text style={styles.hint}>Massimo 11 caratteri maiuscoli</Text>}
+
+          {/* Selezione Operazione */}
+          <Text style={styles.label}>Tipo operazione</Text>
+          <View style={styles.operationSelector}>
             <TouchableOpacity
-              key={type}
-              style={[styles.typeButton, itemType === type && styles.typeButtonActive]}
-              onPress={() => {
-                setItemType(type);
-                setItemCode('');
-              }}
+              style={[
+                styles.operationButton,
+                operation === 'AVANZAMENTO' && styles.operationButtonActive,
+              ]}
+              onPress={() => setOperation('AVANZAMENTO')}
             >
               <Text
                 style={[
-                  styles.typeButtonText,
-                  itemType === type && styles.typeButtonTextActive,
+                  styles.operationButtonText,
+                  operation === 'AVANZAMENTO' && styles.operationButtonTextActive,
                 ]}
               >
-                {type}
+                AVANZAMENTO
               </Text>
             </TouchableOpacity>
-          ))}
-        </View>
+            <TouchableOpacity
+              style={[
+                styles.operationButton,
+                operation === 'RETROCESSIONE' && styles.operationButtonActive,
+              ]}
+              onPress={() => setOperation('RETROCESSIONE')}
+            >
+              <Text
+                style={[
+                  styles.operationButtonText,
+                  operation === 'RETROCESSIONE' && styles.operationButtonTextActive,
+                ]}
+              >
+                RETROCESSIONE
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-        {/* Input Codice */}
-        <Text style={styles.label}>Numero {itemType}</Text>
-        <View style={styles.inputRow}>
+          {/* Reparto di Partenza */}
+          <Text style={styles.label}>Reparto di partenza</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={fromDepartment?.id || null}
+              onValueChange={(itemValue) => {
+                const selected = departments.find(d => d.id === itemValue);
+                setFromDepartment(selected || null);
+              }}
+              style={styles.picker}
+            >
+              <Picker.Item label="Seleziona reparto di partenza" value={null} />
+              {departments.map((dept) => (
+                <Picker.Item key={dept.id} label={dept.name} value={dept.id} />
+              ))}
+            </Picker>
+          </View>
+
+          {/* Reparto di Destinazione */}
+          <Text style={styles.label}>Reparto di destinazione</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={toDepartment?.id || null}
+              onValueChange={(itemValue) => {
+                const selected = departments.find(d => d.id === itemValue);
+                setToDepartment(selected || null);
+              }}
+              style={styles.picker}
+            >
+              <Picker.Item label="Seleziona reparto di destinazione" value={null} />
+              {departments.map((dept) => (
+                <Picker.Item key={dept.id} label={dept.name} value={dept.id} />
+              ))}
+            </Picker>
+          </View>
+
+          {/* Scarti */}
+          <Text style={styles.label}>Scarti (opzionale)</Text>
           <TextInput
             style={styles.input}
-            value={itemCode}
-            onChangeText={(text) => setItemCode(text.toUpperCase())}
-            placeholder={`Inserisci numero ${itemType}`}
+            value={scarti}
+            onChangeText={setScarti}
+            placeholder="Numero scarti"
             placeholderTextColor="#999"
-            autoCapitalize="characters"
-            maxLength={itemType === 'ODL' ? 11 : 10}
+            keyboardType="numeric"
           />
-        </View>
 
-        {itemType === 'JOB' && <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>}
-        {itemType === 'STACCATO' && <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>}
-        {itemType === 'ODL' && <Text style={styles.hint}>Massimo 11 caratteri maiuscoli</Text>}
+          {/* Note */}
+          <Text style={styles.label}>Note (opzionale)</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={note}
+            onChangeText={setNote}
+            placeholder="Aggiungi note..."
+            placeholderTextColor="#999"
+            multiline
+            numberOfLines={3}
+          />
 
-        {/* Selezione Operazione */}
-        <Text style={styles.label}>Tipo operazione</Text>
-        <View style={styles.operationSelector}>
+          {/* Pulsante Registra Movimento */}
           <TouchableOpacity
-            style={[
-              styles.operationButton,
-              operation === 'AVANZAMENTO' && styles.operationButtonActive,
-            ]}
-            onPress={() => setOperation('AVANZAMENTO')}
+            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+            onPress={handleTrackOrder}
+            disabled={loading}
           >
-            <Text
-              style={[
-                styles.operationButtonText,
-                operation === 'AVANZAMENTO' && styles.operationButtonTextActive,
-              ]}
-            >
-              AVANZAMENTO
-            </Text>
+            {loading ? (
+              <>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={styles.submitButtonText}>Registrazione...</Text>
+              </>
+            ) : (
+              <Text style={styles.submitButtonText}>Registra Movimento</Text>
+            )}
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.operationButton,
-              operation === 'RETROCESSIONE' && styles.operationButtonActive,
-            ]}
-            onPress={() => setOperation('RETROCESSIONE')}
-          >
-            <Text
-              style={[
-                styles.operationButtonText,
-                operation === 'RETROCESSIONE' && styles.operationButtonTextActive,
-              ]}
-            >
-              RETROCESSIONE
-            </Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Reparto di Partenza - PICKER */}
-        <Text style={styles.label}>Reparto di partenza</Text>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={fromDepartment?.id || null}
-            onValueChange={(itemValue) => {
-              const selected = departments.find(d => d.id === itemValue);
-              setFromDepartment(selected || null);
-            }}
-            style={styles.picker}
-          >
-            <Picker.Item label="Seleziona reparto di partenza" value={null} />
-            {departments.map((dept) => (
-              <Picker.Item key={dept.id} label={dept.name} value={dept.id} />
-            ))}
-          </Picker>
-        </View>
-
-        {/* Reparto di Destinazione - PICKER */}
-        <Text style={styles.label}>Reparto di destinazione</Text>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={toDepartment?.id || null}
-            onValueChange={(itemValue) => {
-              const selected = departments.find(d => d.id === itemValue);
-              setToDepartment(selected || null);
-            }}
-            style={styles.picker}
-          >
-            <Picker.Item label="Seleziona reparto di destinazione" value={null} />
-            {departments.map((dept) => (
-              <Picker.Item key={dept.id} label={dept.name} value={dept.id} />
-            ))}
-          </Picker>
-        </View>
-
-        {/* Scarti (opzionale) */}
-        <Text style={styles.label}>Scarti (opzionale)</Text>
-        <TextInput
-          style={styles.input}
-          value={scarti}
-          onChangeText={setScarti}
-          placeholder="Numero scarti"
-          placeholderTextColor="#999"
-          keyboardType="numeric"
-        />
-
-        {/* Note (opzionale) */}
-        <Text style={styles.label}>Note (opzionale)</Text>
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          value={note}
-          onChangeText={setNote}
-          placeholder="Aggiungi note..."
-          placeholderTextColor="#999"
-          multiline
-          numberOfLines={3}
-        />
-
-        {/* Pulsante Registra Movimento */}
-        <TouchableOpacity
-          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-          onPress={handleTrackOrder}
-          disabled={loading}
-        >
-          {loading ? (
-            <>
-              <ActivityIndicator color="#fff" size="small" />
-              <Text style={styles.submitButtonText}>Registrazione...</Text>
-            </>
-          ) : (
-            <Text style={styles.submitButtonText}>Registra Movimento</Text>
+          {/* Riepilogo */}
+          {itemCode && fromDepartment && toDepartment && (
+            <View style={styles.summary}>
+              <Text style={styles.summaryTitle}>Riepilogo</Text>
+              <Text style={styles.summaryText}>Tipo: {itemType}</Text>
+              <Text style={styles.summaryText}>Numero: {itemCode}</Text>
+              <Text style={styles.summaryText}>Operazione: {operation}</Text>
+              <Text style={styles.summaryText}>Da: {fromDepartment.name}</Text>
+              <Text style={styles.summaryText}>A: {toDepartment.name}</Text>
+              {scarti && <Text style={styles.summaryText}>Scarti: {scarti}</Text>}
+              {note && <Text style={styles.summaryText}>Note: {note}</Text>}
+            </View>
           )}
-        </TouchableOpacity>
-
-        {/* Riepilogo */}
-        {itemCode && fromDepartment && toDepartment && (
-          <View style={styles.summary}>
-            <Text style={styles.summaryTitle}>Riepilogo</Text>
-            <Text style={styles.summaryText}>Tipo: {itemType}</Text>
-            <Text style={styles.summaryText}>Numero: {itemCode}</Text>
-            <Text style={styles.summaryText}>Operazione: {operation}</Text>
-            <Text style={styles.summaryText}>Da: {fromDepartment.name}</Text>
-            <Text style={styles.summaryText}>A: {toDepartment.name}</Text>
-            {scarti && <Text style={styles.summaryText}>Scarti: {scarti}</Text>}
-            {note && <Text style={styles.summaryText}>Note: {note}</Text>}
-          </View>
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -489,16 +470,31 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  header: {
+    backgroundColor: '#2D6BA8',
+    padding: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  backButton: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    width: 60,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    flex: 1,
+    textAlign: 'center',
+  },
+  flex: {
+    flex: 1,
+  },
   scrollContent: {
     padding: 20,
-  },
-
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 20,
-    textAlign: 'center',
   },
   label: {
     fontSize: 16,
@@ -635,4 +631,3 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 });
-
