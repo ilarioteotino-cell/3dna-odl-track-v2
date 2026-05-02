@@ -239,9 +239,7 @@ export default function TrackOrderScreen({ navigation }) {
             from_department_id: fromDepartment.id,
             to_department_id: toDepartment.id,
             moved_by_user_id: currentUser.id,
-    moved_by_name: currentUser.full_name,
-    from_department_name: fromDepartment.name,
-    to_department_name: toDepartment.name,
+
             // Numeri identificativi
             job_number: itemType === 'JOB' ? upperCode : null,
             order_number: itemType === 'ODL' ? upperCode : null,
