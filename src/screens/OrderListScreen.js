@@ -31,24 +31,30 @@ export default function OrderListScreen({ navigation }) {
     }
   }
 
-  function renderHistory({ item }) {
+function renderHistory({ item }) {
     const isAdvancement = item.operation_type === 'avanzamento';
     const movementColor = isAdvancement ? '#2D6BA8' : '#E53935';
+    
+    // Estrai i dati dell'ordine - gestisce sia array che oggetto singolo
+    const orderData = Array.isArray(item.order) ? item.order[0] : item.order;
+    const orderNumber = orderData?.order_number || item.order_number || 'N/A';
+    const jobNumber = orderData?.job_number || item.job_number;
+    const staccatoNumber = orderData?.staccato_number || item.staccato_number;
 
     return (
       <View style={styles.historyCard}>
         <View style={{ flex: 1 }}>
           <Text style={styles.historyTitle}>
-            Ordine {item.order?.order_number || 'N/A'}
+            Ordine {orderNumber}
           </Text>
-          {item.order?.job_number && (
+          {jobNumber && (
             <Text style={styles.historyDetail}>
-              JOB: {item.order.job_number}
+              JOB: {jobNumber}
             </Text>
           )}
-          {item.order?.staccato_number && (
+          {staccatoNumber && (
             <Text style={styles.historyDetail}>
-              Staccato: {item.order.staccato_number}
+              Staccato: {staccatoNumber}
             </Text>
           )}
 
