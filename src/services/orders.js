@@ -447,6 +447,11 @@ export const getRecentHistory = async (limit = 50) => {
         scarti,
         note,
         moved_at,
+        order:orders (
+          order_number,
+          job_number,
+          staccato_number
+        ),
         from_dept:from_department_id(id, name),
         to_dept:to_department_id(id, name),
         user:moved_by_user_id(id, username, full_name)
