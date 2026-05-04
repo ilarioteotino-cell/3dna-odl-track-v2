@@ -31,15 +31,26 @@ export default function OrderListScreen({ navigation }) {
     }
   }
 
+  function formatDate(value) {
+    if (!value) return 'Data non disponibile';
+
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return 'Data non disponibile';
+
+    return date.toLocaleString('it-IT');
+  }
+
   function renderHistory({ item }) {
     const isAdvancement = item.operationtype === 'avanzamento';
     const movementColor = isAdvancement ? '#2D6BA8' : '#E53935';
 
-    const orderData = Array.isArray(item.order) ? item.order[0] : item.order;
+    const orderData = Array.isArray(item.order)
+      ? item.order[0]
+      : item.order || item.orders || null;
 
-    const orderNumber = orderData?.ordernumber || item.ordernumber;
-    const jobNumber = orderData?.jobnumber || item.jobnumber;
-    const staccatoNumber = orderData?.staccatonumber || item.staccatonumber;
+    const jobNumber = item.jobnumber || orderData?.jobnumber || null;
+    const staccatoNumber = item.staccatonumber || orderData?.staccatonumber || null;
+    const orderNumber = item.ordernumber || orderData?.ordernumber || null;
 
     const mainTitle = jobNumber
       ? `JOB: ${jobNumber}`
@@ -49,25 +60,41 @@ export default function OrderListScreen({ navigation }) {
       ? `ODL: ${orderNumber}`
       : 'Codice non disponibile';
 
+    const fromDeptName =
+      item.fromdepartmentname ||
+      item.fromdept?.name ||
+      'N/A';
+
+    const toDeptName =
+      item.todepartmentname ||
+      item.todept?.name ||
+      'N/A';
+
+    const operatorName =
+      item.movedbyname ||
+      item.user?.fullname ||
+      item.user?.username ||
+      'Sconosciuto';
+
     return (
       <View style={styles.historyCard}>
         <View style={{ flex: 1 }}>
           <Text style={styles.historyTitle}>{mainTitle}</Text>
 
           <Text style={[styles.historyMovement, { color: movementColor }]}>
-            {item.fromdept?.name || 'N/A'} → {item.todept?.name || 'N/A'}
+            {fromDeptName} → {toDeptName}
           </Text>
 
           <Text style={styles.historyDetail}>
-            Operatore: {item.user?.fullname || item.user?.username || 'Sconosciuto'}
+            Operatore: {operatorName}
           </Text>
 
-          {item.note && (
+          {item.note ? (
             <Text style={styles.historyNote}>Nota: {item.note}</Text>
-          )}
+          ) : null}
 
           <Text style={styles.historyDate}>
-            {new Date(item.movedat).toLocaleString('it-IT')}
+            {formatDate(item.movedat)}
           </Text>
         </View>
 
@@ -86,7 +113,9 @@ export default function OrderListScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backButton}>← Indietro</Text>
         </TouchableOpacity>
+
         <Text style={styles.title}>Storico Movimentazioni</Text>
+
         <View style={{ width: 60 }} />
       </View>
 
