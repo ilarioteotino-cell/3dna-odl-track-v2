@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
- StyleSheet,
+  StyleSheet,
   TouchableOpacity,
   TextInput,
   Alert,
@@ -93,7 +93,7 @@ function WebScanner({ visible, onClose, onScan }) {
             onScan?.(decodedText);
           },
           () => {
-            // Ignora gli errori di decoding continui
+            // ignora gli errori di decoding continui
           }
         );
       } catch (error) {
@@ -248,8 +248,8 @@ export default function TrackOrderScreen({ navigation }) {
     if (itemType === 'ODL') {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, currentdepartmentid')
-        .eq('ordernumber', upperCode)
+        .select('id, current_department_id')
+        .eq('order_number', upperCode)
         .maybeSingle();
 
       if (error) throw error;
@@ -259,8 +259,8 @@ export default function TrackOrderScreen({ navigation }) {
     if (itemType === 'JOB') {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, currentdepartmentid')
-        .eq('jobnumber', upperCode)
+        .select('id, current_department_id')
+        .eq('job_number', upperCode)
         .maybeSingle();
 
       if (error) throw error;
@@ -270,8 +270,8 @@ export default function TrackOrderScreen({ navigation }) {
     if (itemType === 'STACCATO') {
       const { data, error } = await supabase
         .from('orders')
-        .select('id, currentdepartmentid')
-        .eq('staccatonumber', upperCode)
+        .select('id, current_department_id')
+        .eq('staccato_number', upperCode)
         .maybeSingle();
 
       if (error) throw error;
@@ -324,16 +324,16 @@ export default function TrackOrderScreen({ navigation }) {
         console.log('📦 Ordine non trovato, creazione in corso...');
 
         const newOrderData = {
-          ordernumber: itemType === 'ODL' ? upperCode : null,
-          jobnumber: itemType === 'JOB' ? upperCode : null,
-          staccatonumber: itemType === 'STACCATO' ? upperCode : null,
-          startingdepartmentid: fromDepartment.id,
-          currentdepartmentid: fromDepartment.id,
-          createdby: currentUser.id,
+          order_number: itemType === 'ODL' ? upperCode : null,
+          job_number: itemType === 'JOB' ? upperCode : null,
+          staccato_number: itemType === 'STACCATO' ? upperCode : null,
+          starting_department_id: fromDepartment.id,
+          current_department_id: fromDepartment.id,
+          created_by: currentUser.id,
           scarti: 0,
           note: null,
-          createdat: new Date().toISOString(),
-          updatedat: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         };
 
         const { data: createdOrder, error: createError } = await supabase
@@ -357,8 +357,8 @@ export default function TrackOrderScreen({ navigation }) {
       const { error: updateError } = await supabase
         .from('orders')
         .update({
-          currentdepartmentid: toDepartment.id,
-          updatedat: new Date().toISOString(),
+          current_department_id: toDepartment.id,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', orderId);
 
@@ -368,24 +368,24 @@ export default function TrackOrderScreen({ navigation }) {
       }
 
       const historyPayload = {
-        orderid: orderId,
-        ordernumber: itemType === 'ODL' ? upperCode : order?.ordernumber || null,
-        jobnumber: itemType === 'JOB' ? upperCode : order?.jobnumber || null,
-        staccatonumber: itemType === 'STACCATO' ? upperCode : order?.staccatonumber || null,
-        fromdepartmentid: fromDepartment.id,
-        todepartmentid: toDepartment.id,
-        movedbyuserid: currentUser.id,
-        movedbyname: currentUser?.fullname || currentUser?.username || 'Sconosciuto',
-        fromdepartmentname: fromDepartment.name,
-        todepartmentname: toDepartment.name,
-        operationtype: operation.toLowerCase(),
+        order_id: orderId,
+        order_number: itemType === 'ODL' ? upperCode : order?.order_number || null,
+        job_number: itemType === 'JOB' ? upperCode : order?.job_number || null,
+        staccato_number: itemType === 'STACCATO' ? upperCode : order?.staccato_number || null,
+        from_department_id: fromDepartment.id,
+        to_department_id: toDepartment.id,
+        moved_by_user_id: currentUser.id,
+        moved_by_name: currentUser?.full_name || currentUser?.username || 'Sconosciuto',
+        from_department_name: fromDepartment.name,
+        to_department_name: toDepartment.name,
+        operation_type: operation.toLowerCase(),
         scarti: scarti ? parseInt(scarti, 10) || 0 : 0,
         note: note.trim() || null,
-        movedat: new Date().toISOString(),
+        moved_at: new Date().toISOString(),
       };
 
       const { error: historyError } = await supabase
-        .from('orderhistory')
+        .from('order_history')
         .insert(historyPayload);
 
       if (historyError) {
