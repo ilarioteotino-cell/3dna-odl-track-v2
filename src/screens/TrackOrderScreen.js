@@ -36,40 +36,69 @@ const alertSuccesso = (title, message = '') => {
   }
 };
 
-// --- COMPONENTE SCANNER ESCLUSIVO PER WEB ---
+// --- COMPONENTE SCANNER WEB ---
 const WebScanner = ({ onScan }) => {
   useEffect(() => {
     if (!isWeb) return;
     
-    // Import dinamico per evitare blocchi
-    import('html5-qrcode').then(({ Html5QrcodeScanner }) => {
-      const html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader", 
-        { fps: 10, qrbox: { width: 250, height: 250 } }, 
-        false
-      );
+    let html5QrCode = null;
 
-      html5QrcodeScanner.render(
-        (decodedText) => {
-          html5QrcodeScanner.clear();
-          onScan({ data: decodedText });
-        },
-        (error) => {
-          // Ignora errori di ricerca continua del QR
-        }
-      );
+    import('html5-qrcode').then(({ Html5Qrcode }) => {
+      html5QrCode = new Html5Qrcode("reader");
+
+      Html5Qrcode.getCameras()
+        .then((devices) => {
+          if (devices && devices.length > 0) {
+            // Seleziona la fotocamera posteriore se esiste, altrimenti la prima trovata
+            let cameraId = devices[0].id;
+            for (let i = 0; i < devices.length; i++) {
+              if (devices[i].label.toLowerCase().includes("back") || devices[i].label.toLowerCase().includes("environment")) {
+                cameraId = devices[i].id;
+                break;
+              }
+            }
+
+            setTimeout(() => {
+              html5QrCode.start(
+                cameraId, 
+                {
+                  fps: 10,
+                  qrbox: { width: 250, height: 250 }
+                },
+                (decodedText) => {
+                  html5QrCode.stop().then(() => {
+                    onScan({ data: decodedText });
+                  }).catch(e => console.error(e));
+                },
+                (errorMessage) => {
+                  // Ignora errore
+                }
+              ).catch((err) => {
+                console.error("Errore nell'avvio della fotocamera:", err);
+                alertErrore('Errore fotocamera', 'Verifica i permessi nelle impostazioni del browser.');
+              });
+            }, 800);
+          } else {
+            alertErrore('Errore', 'Nessuna fotocamera trovata.');
+          }
+        })
+        .catch((err) => {
+          console.error("Errore permessi:", err);
+          alertErrore('Errore Permessi', 'Impossibile accedere alla fotocamera. Verifica le impostazioni del browser.');
+        });
 
       return () => {
-        html5QrcodeScanner.clear().catch(e => console.log(e));
+        if (html5QrCode && html5QrCode.isScanning) {
+          html5QrCode.stop().catch(error => console.error(error));
+        }
       };
     }).catch(err => {
       console.error("Errore html5-qrcode:", err);
-      alert("Libreria html5-qrcode mancante! Assicurati di aver fatto 'npm install html5-qrcode' e pushato il package.json");
     });
   }, []);
 
   if (isWeb) {
-    return <div id="reader" style={{ width: '100%', height: '100%', backgroundColor: '#fff' }}></div>;
+    return <div id="reader" style={{ width: '100%', height: '100%', backgroundColor: '#000' }}></div>;
   }
   return null;
 };
@@ -85,8 +114,8 @@ export default function TrackOrderScreen({ navigation }) {
   const [note, setNote] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(false);
-  
-  // Stato per lo scanner
+
+  // STATO PER LO SCANNER AGIUNTO
   const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
@@ -116,12 +145,11 @@ export default function TrackOrderScreen({ navigation }) {
     }
   };
 
-  // Funzione per avviare lo scanner
+  // FUNZIONI AGGIUNTE PER LO SCANNER
   const startScanning = () => {
     setIsScanning(true);
   };
 
-  // Funzione chiamata quando legge un codice
   const handleBarcodeScanned = ({ data }) => {
     setIsScanning(false);
     if(data) {
@@ -392,7 +420,7 @@ export default function TrackOrderScreen({ navigation }) {
               autoCapitalize="characters"
               maxLength={itemType === 'ODL' ? 11 : 10}
             />
-            {/* Tasto scanner abilitato per WEB */}
+            {/* PULSANTE FOTOCAMERA AGGIUNTO QUI */}
             {isWeb && (
               <TouchableOpacity style={styles.scanButton} onPress={startScanning}>
                 <Text style={styles.scanButtonIcon}>📷</Text>
@@ -532,10 +560,10 @@ export default function TrackOrderScreen({ navigation }) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* MODAL SCANNER ESCLUSIVO WEB */}
+      {/* MODAL SCANNER AGGIUNTO QUI */}
       <Modal visible={isScanning} animationType="slide" transparent={false}>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
-          <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center' }}>
             <WebScanner onScan={handleBarcodeScanned} />
           </View>
           <View style={styles.scannerControls}>
@@ -627,7 +655,7 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 10, // Aggiunto gap
   },
   input: {
     flex: 1,
@@ -643,8 +671,8 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: 'top',
   },
-  
-  // STILI SCANNER
+
+  // STILI AGGIUNTI PER LO SCANNER
   scanButton: {
     backgroundColor: '#2D6BA8',
     padding: 12,
