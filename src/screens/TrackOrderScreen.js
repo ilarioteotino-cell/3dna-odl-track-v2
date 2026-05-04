@@ -11,17 +11,18 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
   SafeAreaView,
-  Modal // Aggiunto Modal per lo scanner
+  Modal
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { supabase } from '../services/supabase';
 import { getCurrentUser } from '../services/auth';
 import { getDepartments } from '../services/orders';
 
-// IMPORT EXPO-CAMERA (SDK 51+)
-import { CameraView, useCameraPermissions } from 'expo-camera';
+// Importazione Camera nativa (verrà usata solo su iOS/Android)
+import * as ExpoCamera from 'expo-camera';
 
 const isWeb = Platform.OS === 'web';
+const NativeCameraView = !isWeb ? ExpoCamera.CameraView : View;
 
 const alertErrore = (title, message = '') => {
   if (isWeb) {
@@ -39,6 +40,38 @@ const alertSuccesso = (title, message = '') => {
   }
 };
 
+// --- COMPONENTE SCANNER WEB PERSONALIZZATO ---
+const WebScanner = ({ onScan }) => {
+  useEffect(() => {
+    if (!isWeb) return;
+    
+    // Import dinamico per non rompere il build nativo
+    import('html5-qrcode').then(({ Html5QrcodeScanner }) => {
+      const html5QrcodeScanner = new Html5QrcodeScanner(
+        "reader", 
+        { fps: 10, qrbox: { width: 250, height: 250 } }, 
+        false
+      );
+
+      html5QrcodeScanner.render(
+        (decodedText) => {
+          html5QrcodeScanner.clear();
+          onScan({ data: decodedText });
+        },
+        (error) => {
+          // Ignora gli errori di scanning continui (quando non c'è ancora un qr)
+        }
+      );
+
+      return () => {
+        html5QrcodeScanner.clear().catch(error => console.error("Failed to clear scanner", error));
+      };
+    }).catch(err => console.error("Errore caricamento html5-qrcode:", err));
+  }, []);
+
+  return <div id="reader" style={{ width: '100%', height: '100%', backgroundColor: 'black' }}></div>;
+};
+
 export default function TrackOrderScreen({ navigation }) {
   const [itemType, setItemType] = useState('ODL');
   const [itemCode, setItemCode] = useState('');
@@ -51,8 +84,11 @@ export default function TrackOrderScreen({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // STATI PER FOTOCAMERA E SCANNER
-  const [permission, requestPermission] = useCameraPermissions();
+  // GESTIONE PERMESSI SOLO NATIVA
+  const [permission, requestPermission] = !isWeb && ExpoCamera.useCameraPermissions 
+    ? ExpoCamera.useCameraPermissions() 
+    : [null, null];
+  
   const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
@@ -82,9 +118,9 @@ export default function TrackOrderScreen({ navigation }) {
     }
   };
 
-  // FUNZIONE PER APRIRE LO SCANNER
+  // FUNZIONE APRI SCANNER (Gestisce Web e Mobile in modo diverso)
   const startScanning = async () => {
-    if (!permission?.granted) {
+    if (!isWeb && !permission?.granted) {
       const result = await requestPermission();
       if (!result.granted) {
         alertErrore('Errore', 'Permesso fotocamera negato. Abilitalo nelle impostazioni.');
@@ -94,11 +130,13 @@ export default function TrackOrderScreen({ navigation }) {
     setIsScanning(true);
   };
 
-  // FUNZIONE CHIAMATA QUANDO IL QR/BARCODE VIENE LETTO
+  // QUANDO LEGGE UN CODICE (Web o Mobile)
   const handleBarcodeScanned = ({ type, data }) => {
     setIsScanning(false);
-    setItemCode(data.toUpperCase());
-    console.log(`✅ Scansionato codice ${type}: ${data}`);
+    if(data) {
+      setItemCode(data.toUpperCase());
+      console.log(`✅ Scansionato codice: ${data}`);
+    }
   };
 
   const validateItemCode = (type, code) => {
@@ -130,12 +168,15 @@ export default function TrackOrderScreen({ navigation }) {
   };
 
   const handleTrackOrder = async () => {
+    // Validazioni
     if (!itemCode.trim()) {
       alertErrore('Errore', `Inserisci un numero ${itemType}`);
       return;
     }
 
-    if (!validateItemCode(itemType, itemCode)) return;
+    if (!validateItemCode(itemType, itemCode)) {
+      return;
+    }
 
     if (!fromDepartment) {
       alertErrore('Errore', 'Seleziona il reparto di partenza');
@@ -166,6 +207,7 @@ export default function TrackOrderScreen({ navigation }) {
       let orderId = null;
       let order = null;
 
+      // PASSO 1: Cerca se l'ordine esiste
       if (itemType === 'ODL') {
         const { data } = await supabase
           .from('orders')
@@ -176,6 +218,7 @@ export default function TrackOrderScreen({ navigation }) {
         if (data) {
           orderId = data.id;
           order = data;
+          console.log('✅ ODL trovato:', orderId);
         }
       } else if (itemType === 'JOB') {
         const { data } = await supabase
@@ -187,6 +230,7 @@ export default function TrackOrderScreen({ navigation }) {
         if (data) {
           orderId = data.id;
           order = data;
+          console.log('✅ JOB trovato:', orderId);
         }
       } else if (itemType === 'STACCATO') {
         const { data } = await supabase
@@ -198,9 +242,11 @@ export default function TrackOrderScreen({ navigation }) {
         if (data) {
           orderId = data.id;
           order = data;
+          console.log('✅ STACCATO trovato:', orderId);
         }
       }
 
+      // PASSO 2: Se l'ordine non esiste, crealo
       if (!orderId) {
         console.log('📦 Creazione nuovo ordine...');
         
@@ -220,13 +266,21 @@ export default function TrackOrderScreen({ navigation }) {
           .insert([newOrderData])
           .select();
 
-        if (createError) throw createError;
-        if (!createdOrder || createdOrder.length === 0) throw new Error('Errore: nessun record creato nella tabella orders');
+        if (createError) {
+          console.error('❌ Errore creazione ordine:', createError);
+          throw createError;
+        }
+
+        if (!createdOrder || createdOrder.length === 0) {
+          throw new Error('Errore: nessun record creato nella tabella orders');
+        }
 
         orderId = createdOrder[0].id;
         order = createdOrder[0];
+        console.log('✅ Ordine creato con ID:', orderId);
       }
 
+      // PASSO 3: Aggiorna l'ordine
       if (orderId) {
         const { error: updateError } = await supabase
           .from('orders')
@@ -236,34 +290,51 @@ export default function TrackOrderScreen({ navigation }) {
           })
           .eq('id', orderId);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('❌ Errore aggiornamento ordine:', updateError);
+          throw updateError;
+        }
 
+        // PASSO 4: Registra movimento in order_history CON NOMI LEGGIBILI
         const { error: historyError } = await supabase
           .from('order_history')
           .insert({
+            // ID per relazioni
             order_id: orderId,
             from_department_id: fromDepartment.id,
             to_department_id: toDepartment.id,
             moved_by_user_id: currentUser.id,
+
+            // Numeri identificativi
             job_number: itemType === 'JOB' ? upperCode : null,
             order_number: itemType === 'ODL' ? upperCode : null,
             staccato_number: itemType === 'STACCATO' ? upperCode : null,
+            
+            // NOMI LEGGIBILI PER CSV
             moved_by_name: currentUser?.full_name || currentUser?.username,
             from_department_name: fromDepartment.name,
             to_department_name: toDepartment.name,
+            
+            // Altri dati
             operation_type: operation,
             scarti: scarti ? parseInt(scarti) : 0,
             note: note.trim() || null,
             moved_at: new Date().toISOString(),
           });
 
-        if (historyError) throw historyError;
+        if (historyError) {
+          console.error('❌ Errore salvataggio storico:', historyError);
+          throw historyError;
+        }
+
+        console.log('✅ Movimento registrato con successo');
 
         alertSuccesso(
           'Successo!',
           `${itemType} ${upperCode}\n${operation} da ${fromDepartment.name} a ${toDepartment.name}`
         );
 
+        // Reset form
         setItemCode('');
         setFromDepartment(null);
         setToDepartment(null);
@@ -294,7 +365,6 @@ export default function TrackOrderScreen({ navigation }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          
           {/* Selezione Tipo */}
           <Text style={styles.label}>Tipo di tracciamento</Text>
           <View style={styles.typeSelector}>
@@ -307,7 +377,12 @@ export default function TrackOrderScreen({ navigation }) {
                   setItemCode('');
                 }}
               >
-                <Text style={[styles.typeButtonText, itemType === type && styles.typeButtonTextActive]}>
+                <Text
+                  style={[
+                    styles.typeButtonText,
+                    itemType === type && styles.typeButtonTextActive,
+                  ]}
+                >
                   {type}
                 </Text>
               </TouchableOpacity>
@@ -326,12 +401,10 @@ export default function TrackOrderScreen({ navigation }) {
               autoCapitalize="characters"
               maxLength={itemType === 'ODL' ? 11 : 10}
             />
-            {/* Tasto scanner abilitato solo se non siamo su Web (la fotocamera web richiede gestori specifici) */}
-            {!isWeb && (
-              <TouchableOpacity style={styles.scanButton} onPress={startScanning}>
-                <Text style={styles.scanButtonIcon}>📷</Text>
-              </TouchableOpacity>
-            )}
+            {/* Tasto visibile per TUTTI (Web e App) */}
+            <TouchableOpacity style={styles.scanButton} onPress={startScanning}>
+              <Text style={styles.scanButtonIcon}>📷</Text>
+            </TouchableOpacity>
           </View>
 
           {itemType === 'JOB' && <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>}
@@ -342,18 +415,34 @@ export default function TrackOrderScreen({ navigation }) {
           <Text style={styles.label}>Tipo operazione</Text>
           <View style={styles.operationSelector}>
             <TouchableOpacity
-              style={[styles.operationButton, operation === 'AVANZAMENTO' && styles.operationButtonActive]}
+              style={[
+                styles.operationButton,
+                operation === 'AVANZAMENTO' && styles.operationButtonActive,
+              ]}
               onPress={() => setOperation('AVANZAMENTO')}
             >
-              <Text style={[styles.operationButtonText, operation === 'AVANZAMENTO' && styles.operationButtonTextActive]}>
+              <Text
+                style={[
+                  styles.operationButtonText,
+                  operation === 'AVANZAMENTO' && styles.operationButtonTextActive,
+                ]}
+              >
                 AVANZAMENTO
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.operationButton, operation === 'RETROCESSIONE' && styles.operationButtonActive]}
+              style={[
+                styles.operationButton,
+                operation === 'RETROCESSIONE' && styles.operationButtonActive,
+              ]}
               onPress={() => setOperation('RETROCESSIONE')}
             >
-              <Text style={[styles.operationButtonText, operation === 'RETROCESSIONE' && styles.operationButtonTextActive]}>
+              <Text
+                style={[
+                  styles.operationButtonText,
+                  operation === 'RETROCESSIONE' && styles.operationButtonTextActive,
+                ]}
+              >
                 RETROCESSIONE
               </Text>
             </TouchableOpacity>
@@ -450,14 +539,20 @@ export default function TrackOrderScreen({ navigation }) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* MODAL PER LA FOTOCAMERA */}
+      {/* MODAL SCANNER IBRIDO WEB/MOBILE */}
       <Modal visible={isScanning} animationType="slide" transparent={false}>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
-          <CameraView
-            style={{ flex: 1 }}
-            facing="back"
-            onBarcodeScanned={handleBarcodeScanned}
-          />
+          {isWeb ? (
+            <View style={{ flex: 1, backgroundColor: '#fff' }}>
+               <WebScanner onScan={handleBarcodeScanned} />
+            </View>
+          ) : (
+            <NativeCameraView 
+              style={{ flex: 1 }} 
+              facing="back" 
+              onBarcodeScanned={handleBarcodeScanned} 
+            />
+          )}
           <View style={styles.scannerControls}>
             <TouchableOpacity 
               style={styles.closeScannerBtn} 
@@ -559,6 +654,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  
   // STILI NUOVI PER LO SCANNER
   scanButton: {
     backgroundColor: '#2D6BA8',
@@ -585,6 +685,7 @@ const styles = StyleSheet.create({
     width: 200,
     alignItems: 'center',
     elevation: 5,
+    zIndex: 99,
   },
   closeScannerText: {
     color: '#fff',
@@ -592,10 +693,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   // FINE STILI SCANNER
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
+
   operationSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
