@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
+ StyleSheet,
   TouchableOpacity,
   TextInput,
   Alert,
@@ -36,72 +36,121 @@ const alertSuccesso = (title, message = '') => {
   }
 };
 
-// --- COMPONENTE SCANNER WEB ---
-const WebScanner = ({ onScan }) => {
+function WebScanner({ visible, onClose, onScan }) {
+  const scannerRef = useRef(null);
+  const containerId = 'qr-reader-track-order';
+
   useEffect(() => {
-    if (!isWeb) return;
-    
-    let html5QrCode = null;
+    if (!isWeb || !visible) return;
 
-    import('html5-qrcode').then(({ Html5Qrcode }) => {
-      html5QrCode = new Html5Qrcode("reader");
+    let mounted = true;
 
-      Html5Qrcode.getCameras()
-        .then((devices) => {
-          if (devices && devices.length > 0) {
-            // Seleziona la fotocamera posteriore se esiste, altrimenti la prima trovata
-            let cameraId = devices[0].id;
-            for (let i = 0; i < devices.length; i++) {
-              if (devices[i].label.toLowerCase().includes("back") || devices[i].label.toLowerCase().includes("environment")) {
-                cameraId = devices[i].id;
-                break;
+    const startScanner = async () => {
+      try {
+        const { Html5Qrcode } = await import('html5-qrcode');
+        if (!mounted) return;
+
+        const cameras = await Html5Qrcode.getCameras();
+        if (!mounted) return;
+
+        if (!cameras || cameras.length === 0) {
+          alertErrore('Errore', 'Nessuna fotocamera trovata.');
+          onClose?.();
+          return;
+        }
+
+        const backCamera =
+          cameras.find((camera) => {
+            const label = (camera.label || '').toLowerCase();
+            return (
+              label.includes('back') ||
+              label.includes('rear') ||
+              label.includes('environment') ||
+              label.includes('posteriore')
+            );
+          }) || cameras[0];
+
+        scannerRef.current = new Html5Qrcode(containerId);
+
+        await scannerRef.current.start(
+          backCamera.id,
+          {
+            fps: 10,
+            qrbox: { width: 240, height: 240 },
+            aspectRatio: 1,
+          },
+          async (decodedText) => {
+            try {
+              if (scannerRef.current) {
+                await scannerRef.current.stop();
+                await scannerRef.current.clear();
+                scannerRef.current = null;
               }
+            } catch (err) {
+              console.error('Errore chiusura scanner:', err);
             }
 
-            setTimeout(() => {
-              html5QrCode.start(
-                cameraId, 
-                {
-                  fps: 10,
-                  qrbox: { width: 250, height: 250 }
-                },
-                (decodedText) => {
-                  html5QrCode.stop().then(() => {
-                    onScan({ data: decodedText });
-                  }).catch(e => console.error(e));
-                },
-                (errorMessage) => {
-                  // Ignora errore
-                }
-              ).catch((err) => {
-                console.error("Errore nell'avvio della fotocamera:", err);
-                alertErrore('Errore fotocamera', 'Verifica i permessi nelle impostazioni del browser.');
-              });
-            }, 800);
-          } else {
-            alertErrore('Errore', 'Nessuna fotocamera trovata.');
+            onScan?.(decodedText);
+          },
+          () => {
+            // Ignora gli errori di decoding continui
           }
-        })
-        .catch((err) => {
-          console.error("Errore permessi:", err);
-          alertErrore('Errore Permessi', 'Impossibile accedere alla fotocamera. Verifica le impostazioni del browser.');
-        });
+        );
+      } catch (error) {
+        console.error('Errore avvio scanner:', error);
+        alertErrore(
+          'Errore fotocamera',
+          'Impossibile avviare la fotocamera. Verifica HTTPS e permessi del browser.'
+        );
+        onClose?.();
+      }
+    };
 
-      return () => {
-        if (html5QrCode && html5QrCode.isScanning) {
-          html5QrCode.stop().catch(error => console.error(error));
+    const timeout = setTimeout(() => {
+      startScanner();
+    }, 250);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+
+      const stopScanner = async () => {
+        try {
+          if (scannerRef.current) {
+            await scannerRef.current.stop();
+            await scannerRef.current.clear();
+            scannerRef.current = null;
+          }
+        } catch (error) {
+          console.error('Errore cleanup scanner:', error);
         }
       };
-    }).catch(err => {
-      console.error("Errore html5-qrcode:", err);
-    });
-  }, []);
 
-  if (isWeb) {
-    return <div id="reader" style={{ width: '100%', height: '100%', backgroundColor: '#000' }}></div>;
-  }
-  return null;
-};
+      stopScanner();
+    };
+  }, [visible, onClose, onScan]);
+
+  if (!isWeb || !visible) return null;
+
+  return (
+    <View style={styles.scannerWrapper}>
+      <div
+        id={containerId}
+        style={{
+          width: '100%',
+          maxWidth: '100%',
+          minHeight: '360px',
+          backgroundColor: '#000',
+          borderRadius: '12px',
+          overflow: 'hidden',
+        }}
+      />
+      <Text style={styles.scannerHint}>
+        Inquadra il QR code dentro il riquadro
+      </Text>
+    </View>
+  );
+}
 
 export default function TrackOrderScreen({ navigation }) {
   const [itemType, setItemType] = useState('ODL');
@@ -114,8 +163,6 @@ export default function TrackOrderScreen({ navigation }) {
   const [note, setNote] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // STATO PER LO SCANNER AGIUNTO
   const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
@@ -130,7 +177,7 @@ export default function TrackOrderScreen({ navigation }) {
       console.log('✅ Utente caricato:', user?.username);
     } catch (error) {
       console.error('Errore caricamento utente:', error);
-      alertErrore('Errore', 'Impossibile caricare l\'utente');
+      alertErrore('Errore', "Impossibile caricare l'utente");
     }
   };
 
@@ -138,29 +185,39 @@ export default function TrackOrderScreen({ navigation }) {
     try {
       const data = await getDepartments();
       setDepartments(data || []);
-      console.log('✅ Reparti caricati:', data?.length);
+      console.log('✅ Reparti caricati:', data?.length || 0);
     } catch (error) {
       console.error('Errore caricamento reparti:', error);
       alertErrore('Errore', 'Impossibile caricare i reparti');
     }
   };
 
-  // FUNZIONI AGGIUNTE PER LO SCANNER
-  const startScanning = () => {
+  const handleOpenScanner = () => {
+    if (!isWeb) {
+      alertErrore('Non disponibile', 'Lo scanner QR è attivo solo su web.');
+      return;
+    }
     setIsScanning(true);
   };
 
-  const handleBarcodeScanned = ({ data }) => {
+  const handleCloseScanner = () => {
     setIsScanning(false);
-    if(data) {
-      setItemCode(data.toUpperCase());
-      console.log(`✅ Scansionato codice: ${data}`);
+  };
+
+  const handleBarcodeScanned = (decodedText) => {
+    setIsScanning(false);
+
+    if (decodedText) {
+      const cleaned = decodedText.trim().toUpperCase();
+      setItemCode(cleaned);
+      console.log('✅ Codice scansionato:', cleaned);
+      alertSuccesso('QR rilevato', `Codice acquisito: ${cleaned}`);
     }
   };
 
   const validateItemCode = (type, code) => {
-    const upperCode = code.toUpperCase();
-    
+    const upperCode = code.toUpperCase().trim();
+
     switch (type) {
       case 'JOB':
         if (upperCode.length === 0 || upperCode.length > 10) {
@@ -183,11 +240,48 @@ export default function TrackOrderScreen({ navigation }) {
       default:
         break;
     }
+
     return true;
   };
 
+  const findExistingOrder = async (upperCode) => {
+    if (itemType === 'ODL') {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, currentdepartmentid')
+        .eq('ordernumber', upperCode)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
+    }
+
+    if (itemType === 'JOB') {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, currentdepartmentid')
+        .eq('jobnumber', upperCode)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
+    }
+
+    if (itemType === 'STACCATO') {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, currentdepartmentid')
+        .eq('staccatonumber', upperCode)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
+    }
+
+    return null;
+  };
+
   const handleTrackOrder = async () => {
-    // Validazioni
     if (!itemCode.trim()) {
       alertErrore('Errore', `Inserisci un numero ${itemType}`);
       return;
@@ -220,150 +314,100 @@ export default function TrackOrderScreen({ navigation }) {
     setLoading(true);
 
     try {
-      const upperCode = itemCode.toUpperCase();
-      console.log(`🔍 Cercando ${itemType}: ${upperCode}`);
+      const upperCode = itemCode.trim().toUpperCase();
+      console.log(`🔍 Cercando ${itemType}:`, upperCode);
 
-      let orderId = null;
-      let order = null;
+      let order = await findExistingOrder(upperCode);
+      let orderId = order?.id || null;
 
-      // PASSO 1: Cerca se l'ordine esiste
-      if (itemType === 'ODL') {
-        const { data } = await supabase
-          .from('orders')
-          .select('id, current_department_id')
-          .eq('order_number', upperCode)
-          .single();
-
-        if (data) {
-          orderId = data.id;
-          order = data;
-          console.log('✅ ODL trovato:', orderId);
-        }
-      } else if (itemType === 'JOB') {
-        const { data } = await supabase
-          .from('orders')
-          .select('id, current_department_id')
-          .eq('job_number', upperCode)
-          .single();
-
-        if (data) {
-          orderId = data.id;
-          order = data;
-          console.log('✅ JOB trovato:', orderId);
-        }
-      } else if (itemType === 'STACCATO') {
-        const { data } = await supabase
-          .from('orders')
-          .select('id, current_department_id')
-          .eq('staccato_number', upperCode)
-          .single();
-
-        if (data) {
-          orderId = data.id;
-          order = data;
-          console.log('✅ STACCATO trovato:', orderId);
-        }
-      }
-
-      // PASSO 2: Se l'ordine non esiste, crealo
       if (!orderId) {
-        console.log('📦 Creazione nuovo ordine...');
-        
+        console.log('📦 Ordine non trovato, creazione in corso...');
+
         const newOrderData = {
-          order_number: itemType === 'ODL' ? upperCode : null,
-          job_number: itemType === 'JOB' ? upperCode : null,
-          staccato_number: itemType === 'STACCATO' ? upperCode : null,
-          starting_department_id: fromDepartment.id,
-          current_department_id: fromDepartment.id,
-          created_by: currentUser.id,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          ordernumber: itemType === 'ODL' ? upperCode : null,
+          jobnumber: itemType === 'JOB' ? upperCode : null,
+          staccatonumber: itemType === 'STACCATO' ? upperCode : null,
+          startingdepartmentid: fromDepartment.id,
+          currentdepartmentid: fromDepartment.id,
+          createdby: currentUser.id,
+          scarti: 0,
+          note: null,
+          createdat: new Date().toISOString(),
+          updatedat: new Date().toISOString(),
         };
 
         const { data: createdOrder, error: createError } = await supabase
           .from('orders')
           .insert([newOrderData])
-          .select();
+          .select()
+          .single();
 
         if (createError) {
           console.error('❌ Errore creazione ordine:', createError);
           throw createError;
         }
 
-        if (!createdOrder || createdOrder.length === 0) {
-          throw new Error('Errore: nessun record creato nella tabella orders');
-        }
-
-        orderId = createdOrder[0].id;
-        order = createdOrder[0];
-        console.log('✅ Ordine creato con ID:', orderId);
+        order = createdOrder;
+        orderId = createdOrder.id;
+        console.log('✅ Ordine creato:', orderId);
+      } else {
+        console.log('✅ Ordine trovato:', orderId);
       }
 
-      // PASSO 3: Aggiorna l'ordine
-      if (orderId) {
-        const { error: updateError } = await supabase
-          .from('orders')
-          .update({
-            current_department_id: toDepartment.id,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', orderId);
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({
+          currentdepartmentid: toDepartment.id,
+          updatedat: new Date().toISOString(),
+        })
+        .eq('id', orderId);
 
-        if (updateError) {
-          console.error('❌ Errore aggiornamento ordine:', updateError);
-          throw updateError;
-        }
-
-        // PASSO 4: Registra movimento in order_history CON NOMI LEGGIBILI
-        const { error: historyError } = await supabase
-          .from('order_history')
-          .insert({
-            // ID per relazioni
-            order_id: orderId,
-            from_department_id: fromDepartment.id,
-            to_department_id: toDepartment.id,
-            moved_by_user_id: currentUser.id,
-
-            // Numeri identificativi
-            job_number: itemType === 'JOB' ? upperCode : null,
-            order_number: itemType === 'ODL' ? upperCode : null,
-            staccato_number: itemType === 'STACCATO' ? upperCode : null,
-            
-            // NOMI LEGGIBILI PER CSV
-            moved_by_name: currentUser?.full_name || currentUser?.username,
-            from_department_name: fromDepartment.name,
-            to_department_name: toDepartment.name,
-            
-            // Altri dati
-            operation_type: operation,
-            scarti: scarti ? parseInt(scarti) : 0,
-            note: note.trim() || null,
-            moved_at: new Date().toISOString(),
-          });
-
-        if (historyError) {
-          console.error('❌ Errore salvataggio storico:', historyError);
-          throw historyError;
-        }
-
-        console.log('✅ Movimento registrato con successo');
-
-        alertSuccesso(
-          'Successo!',
-          `${itemType} ${upperCode}\n${operation} da ${fromDepartment.name} a ${toDepartment.name}`
-        );
-
-        // Reset form
-        setItemCode('');
-        setFromDepartment(null);
-        setToDepartment(null);
-        setScarti('');
-        setNote('');
+      if (updateError) {
+        console.error('❌ Errore aggiornamento ordine:', updateError);
+        throw updateError;
       }
 
+      const historyPayload = {
+        orderid: orderId,
+        ordernumber: itemType === 'ODL' ? upperCode : order?.ordernumber || null,
+        jobnumber: itemType === 'JOB' ? upperCode : order?.jobnumber || null,
+        staccatonumber: itemType === 'STACCATO' ? upperCode : order?.staccatonumber || null,
+        fromdepartmentid: fromDepartment.id,
+        todepartmentid: toDepartment.id,
+        movedbyuserid: currentUser.id,
+        movedbyname: currentUser?.fullname || currentUser?.username || 'Sconosciuto',
+        fromdepartmentname: fromDepartment.name,
+        todepartmentname: toDepartment.name,
+        operationtype: operation.toLowerCase(),
+        scarti: scarti ? parseInt(scarti, 10) || 0 : 0,
+        note: note.trim() || null,
+        movedat: new Date().toISOString(),
+      };
+
+      const { error: historyError } = await supabase
+        .from('orderhistory')
+        .insert(historyPayload);
+
+      if (historyError) {
+        console.error('❌ Errore salvataggio storico:', historyError);
+        throw historyError;
+      }
+
+      console.log('✅ Movimento registrato con successo');
+
+      alertSuccesso(
+        'Successo!',
+        `${itemType} ${upperCode}\n${operation} da ${fromDepartment.name} a ${toDepartment.name}`
+      );
+
+      setItemCode('');
+      setFromDepartment(null);
+      setToDepartment(null);
+      setScarti('');
+      setNote('');
     } catch (error) {
       console.error('❌ Errore completo:', error);
-      alertErrore('Errore', error.message || 'Impossibile registrare il movimento');
+      alertErrore('Errore', error?.message || 'Impossibile registrare il movimento');
     } finally {
       setLoading(false);
     }
@@ -373,7 +417,7 @@ export default function TrackOrderScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Indietro</Text>
+          <Text style={styles.backButton}>Indietro</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Traccia Ordine</Text>
         <View style={{ width: 60 }} />
@@ -384,7 +428,6 @@ export default function TrackOrderScreen({ navigation }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Selezione Tipo */}
           <Text style={styles.label}>Tipo di tracciamento</Text>
           <View style={styles.typeSelector}>
             {['JOB', 'ODL', 'STACCATO'].map((type) => (
@@ -408,11 +451,10 @@ export default function TrackOrderScreen({ navigation }) {
             ))}
           </View>
 
-          {/* Input Codice */}
           <Text style={styles.label}>Numero {itemType}</Text>
           <View style={styles.inputRow}>
             <TextInput
-              style={styles.input}
+              style={styles.inputFlex}
               value={itemCode}
               onChangeText={(text) => setItemCode(text.toUpperCase())}
               placeholder={`Inserisci numero ${itemType}`}
@@ -420,19 +462,23 @@ export default function TrackOrderScreen({ navigation }) {
               autoCapitalize="characters"
               maxLength={itemType === 'ODL' ? 11 : 10}
             />
-            {/* PULSANTE FOTOCAMERA AGGIUNTO QUI */}
             {isWeb && (
-              <TouchableOpacity style={styles.scanButton} onPress={startScanning}>
-                <Text style={styles.scanButtonIcon}>📷</Text>
+              <TouchableOpacity style={styles.scanButton} onPress={handleOpenScanner}>
+                <Text style={styles.scanButtonText}>QR</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {itemType === 'JOB' && <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>}
-          {itemType === 'STACCATO' && <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>}
-          {itemType === 'ODL' && <Text style={styles.hint}>Massimo 11 caratteri maiuscoli</Text>}
+          {itemType === 'JOB' && (
+            <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>
+          )}
+          {itemType === 'STACCATO' && (
+            <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>
+          )}
+          {itemType === 'ODL' && (
+            <Text style={styles.hint}>Massimo 11 caratteri maiuscoli</Text>
+          )}
 
-          {/* Selezione Operazione */}
           <Text style={styles.label}>Tipo operazione</Text>
           <View style={styles.operationSelector}>
             <TouchableOpacity
@@ -451,10 +497,11 @@ export default function TrackOrderScreen({ navigation }) {
                 AVANZAMENTO
               </Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               style={[
                 styles.operationButton,
-                operation === 'RETROCESSIONE' && styles.operationButtonActive,
+                operation === 'RETROCESSIONE' && styles.operationButtonRetroActive,
               ]}
               onPress={() => setOperation('RETROCESSIONE')}
             >
@@ -469,13 +516,12 @@ export default function TrackOrderScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Reparto di Partenza */}
           <Text style={styles.label}>Reparto di partenza</Text>
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={fromDepartment?.id || null}
               onValueChange={(itemValue) => {
-                const selected = departments.find(d => d.id === itemValue);
+                const selected = departments.find((d) => d.id === itemValue);
                 setFromDepartment(selected || null);
               }}
               style={styles.picker}
@@ -487,13 +533,12 @@ export default function TrackOrderScreen({ navigation }) {
             </Picker>
           </View>
 
-          {/* Reparto di Destinazione */}
           <Text style={styles.label}>Reparto di destinazione</Text>
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={toDepartment?.id || null}
               onValueChange={(itemValue) => {
-                const selected = departments.find(d => d.id === itemValue);
+                const selected = departments.find((d) => d.id === itemValue);
                 setToDepartment(selected || null);
               }}
               style={styles.picker}
@@ -505,7 +550,6 @@ export default function TrackOrderScreen({ navigation }) {
             </Picker>
           </View>
 
-          {/* Scarti */}
           <Text style={styles.label}>Scarti (opzionale)</Text>
           <TextInput
             style={styles.input}
@@ -516,7 +560,6 @@ export default function TrackOrderScreen({ navigation }) {
             keyboardType="numeric"
           />
 
-          {/* Note */}
           <Text style={styles.label}>Note (opzionale)</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
@@ -528,7 +571,6 @@ export default function TrackOrderScreen({ navigation }) {
             numberOfLines={3}
           />
 
-          {/* Pulsante Registra Movimento */}
           <TouchableOpacity
             style={[styles.submitButton, loading && styles.submitButtonDisabled]}
             onPress={handleTrackOrder}
@@ -544,7 +586,6 @@ export default function TrackOrderScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          {/* Riepilogo */}
           {itemCode && fromDepartment && toDepartment && (
             <View style={styles.summary}>
               <Text style={styles.summaryTitle}>Riepilogo</Text>
@@ -553,30 +594,30 @@ export default function TrackOrderScreen({ navigation }) {
               <Text style={styles.summaryText}>Operazione: {operation}</Text>
               <Text style={styles.summaryText}>Da: {fromDepartment.name}</Text>
               <Text style={styles.summaryText}>A: {toDepartment.name}</Text>
-              {scarti && <Text style={styles.summaryText}>Scarti: {scarti}</Text>}
-              {note && <Text style={styles.summaryText}>Note: {note}</Text>}
+              {scarti ? <Text style={styles.summaryText}>Scarti: {scarti}</Text> : null}
+              {note ? <Text style={styles.summaryText}>Note: {note}</Text> : null}
             </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* MODAL SCANNER AGGIUNTO QUI */}
       <Modal visible={isScanning} animationType="slide" transparent={false}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
-          <View style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center' }}>
-            <WebScanner onScan={handleBarcodeScanned} />
-          </View>
-          <View style={styles.scannerControls}>
-            <TouchableOpacity 
-              style={styles.closeScannerBtn} 
-              onPress={() => setIsScanning(false)}
-            >
-              <Text style={styles.closeScannerText}>Chiudi Scanner</Text>
+        <SafeAreaView style={styles.scannerModalSafe}>
+          <View style={styles.scannerModalContent}>
+            <Text style={styles.scannerTitle}>Scanner QR</Text>
+
+            <WebScanner
+              visible={isScanning}
+              onClose={handleCloseScanner}
+              onScan={handleBarcodeScanned}
+            />
+
+            <TouchableOpacity style={styles.closeScannerBtn} onPress={handleCloseScanner}>
+              <Text style={styles.closeScannerText}>Chiudi scanner</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
       </Modal>
-
     </SafeAreaView>
   );
 }
@@ -611,6 +652,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   label: {
     fontSize: 16,
@@ -655,9 +697,18 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10, // Aggiunto gap
+    gap: 10,
   },
   input: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    fontSize: 16,
+    color: '#333',
+  },
+  inputFlex: {
     flex: 1,
     backgroundColor: '#fff',
     padding: 12,
@@ -671,41 +722,19 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: 'top',
   },
-
-  // STILI AGGIUNTI PER LO SCANNER
   scanButton: {
+    width: 56,
+    height: 50,
     backgroundColor: '#2D6BA8',
-    padding: 12,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  scanButtonIcon: {
-    fontSize: 20,
+  scanButtonText: {
     color: '#fff',
-  },
-  scannerControls: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  closeScannerBtn: {
-    backgroundColor: '#E53935',
-    padding: 15,
-    borderRadius: 30,
-    width: 200,
-    alignItems: 'center',
-    elevation: 5,
-    zIndex: 99,
-  },
-  closeScannerText: {
-    color: '#fff',
-    fontWeight: 'bold',
     fontSize: 16,
+    fontWeight: 'bold',
   },
-
   operationSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -722,6 +751,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   operationButtonActive: {
+    backgroundColor: '#2D6BA8',
+    borderColor: '#2D6BA8',
+  },
+  operationButtonRetroActive: {
     backgroundColor: '#FF9500',
     borderColor: '#FF9500',
   },
@@ -781,5 +814,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 4,
+  },
+  scannerModalSafe: {
+    flex: 1,
+    backgroundColor: '#111',
+  },
+  scannerModalContent: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+  },
+  scannerTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  scannerWrapper: {
+    backgroundColor: '#1c1c1c',
+    borderRadius: 12,
+    padding: 12,
+  },
+  scannerHint: {
+    color: '#ddd',
+    textAlign: 'center',
+    marginTop: 12,
+    fontSize: 14,
+  },
+  closeScannerBtn: {
+    backgroundColor: '#E53935',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  closeScannerText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });
