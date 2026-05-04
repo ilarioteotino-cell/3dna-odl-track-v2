@@ -31,58 +31,56 @@ export default function OrderListScreen({ navigation }) {
     }
   }
 
-  function formatDate(value) {
-    if (!value) return 'Data non disponibile';
-
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return 'Data non disponibile';
-
-    return date.toLocaleString('it-IT');
-  }
-
   function renderHistory({ item }) {
-    const isAdvancement = item.operationtype === 'avanzamento';
+    const isAdvancement = item.operationtype === 'AVANZAMENTO' || item.operationtype === 'avanzamento';
     const movementColor = isAdvancement ? '#2D6BA8' : '#E53935';
 
-    const orderData = Array.isArray(item.order)
-      ? item.order[0]
-      : item.order || item.orders || null;
+    const orderData = Array.isArray(item.order) ? item.order[0] : item.order;
 
-    const jobNumber = item.jobnumber || orderData?.jobnumber || null;
-    const staccatoNumber = item.staccatonumber || orderData?.staccatonumber || null;
-    const orderNumber = item.ordernumber || orderData?.ordernumber || null;
+    const odl = orderData?.ordernumber || item.ordernumber || null;
+    const job = orderData?.jobnumber || item.jobnumber || null;
+    const staccato = orderData?.staccatonumber || item.staccatonumber || null;
 
-    const mainTitle = jobNumber
-      ? `JOB: ${jobNumber}`
-      : staccatoNumber
-      ? `STACCATO: ${staccatoNumber}`
-      : orderNumber
-      ? `ODL: ${orderNumber}`
-      : 'Codice non disponibile';
+    let codeLabel = 'Codice';
+    let codeValue = 'N/A';
 
-    const fromDeptName =
-      item.fromdepartmentname ||
-      item.fromdept?.name ||
-      'N/A';
+    if (job) {
+      codeLabel = 'JOB';
+      codeValue = job;
+    } else if (odl) {
+      codeLabel = 'ODL';
+      codeValue = odl;
+    } else if (staccato) {
+      codeLabel = 'STACCATO';
+      codeValue = staccato;
+    }
 
-    const toDeptName =
-      item.todepartmentname ||
-      item.todept?.name ||
-      'N/A';
+    const fromDept =
+      item.fromdepartmentname || item.fromdept?.name || 'N/A';
+
+    const toDept =
+      item.todepartmentname || item.todept?.name || 'N/A';
 
     const operatorName =
-      item.movedbyname ||
-      item.user?.fullname ||
-      item.user?.username ||
-      'Sconosciuto';
+      item.movedbyname || item.user?.fullname || item.user?.username || 'Sconosciuto';
+
+    const movedDate = item.movedat
+      ? new Date(item.movedat).toLocaleString('it-IT')
+      : 'Data non disponibile';
 
     return (
       <View style={styles.historyCard}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.historyTitle}>{mainTitle}</Text>
+          <Text style={styles.codeLabel}>
+            {codeLabel}
+          </Text>
+
+          <Text style={styles.codeValue}>
+            {codeValue}
+          </Text>
 
           <Text style={[styles.historyMovement, { color: movementColor }]}>
-            {fromDeptName} → {toDeptName}
+            {fromDept} → {toDept}
           </Text>
 
           <Text style={styles.historyDetail}>
@@ -94,7 +92,7 @@ export default function OrderListScreen({ navigation }) {
           ) : null}
 
           <Text style={styles.historyDate}>
-            {formatDate(item.movedat)}
+            {movedDate}
           </Text>
         </View>
 
@@ -113,9 +111,7 @@ export default function OrderListScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backButton}>← Indietro</Text>
         </TouchableOpacity>
-
         <Text style={styles.title}>Storico Movimentazioni</Text>
-
         <View style={{ width: 60 }} />
       </View>
 
@@ -181,11 +177,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  historyTitle: {
-    fontSize: 18,
+  codeLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#666',
+    marginBottom: 2,
+    letterSpacing: 0.5,
+  },
+  codeValue: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 5,
+    marginBottom: 8,
   },
   historyMovement: {
     fontSize: 16,
