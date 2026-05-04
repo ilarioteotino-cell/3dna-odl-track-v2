@@ -11,18 +11,14 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
   SafeAreaView,
-  Modal
+  Modal,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { supabase } from '../services/supabase';
 import { getCurrentUser } from '../services/auth';
 import { getDepartments } from '../services/orders';
 
-// Importazione Camera nativa (verrà usata solo su iOS/Android)
-import * as ExpoCamera from 'expo-camera';
-
 const isWeb = Platform.OS === 'web';
-const NativeCameraView = !isWeb ? ExpoCamera.CameraView : View;
 
 const alertErrore = (title, message = '') => {
   if (isWeb) {
@@ -40,12 +36,12 @@ const alertSuccesso = (title, message = '') => {
   }
 };
 
-// --- COMPONENTE SCANNER WEB PERSONALIZZATO ---
+// --- COMPONENTE SCANNER ESCLUSIVO PER WEB ---
 const WebScanner = ({ onScan }) => {
   useEffect(() => {
     if (!isWeb) return;
     
-    // Import dinamico per non rompere il build nativo
+    // Import dinamico per evitare blocchi
     import('html5-qrcode').then(({ Html5QrcodeScanner }) => {
       const html5QrcodeScanner = new Html5QrcodeScanner(
         "reader", 
@@ -59,17 +55,23 @@ const WebScanner = ({ onScan }) => {
           onScan({ data: decodedText });
         },
         (error) => {
-          // Ignora gli errori di scanning continui (quando non c'è ancora un qr)
+          // Ignora errori di ricerca continua del QR
         }
       );
 
       return () => {
-        html5QrcodeScanner.clear().catch(error => console.error("Failed to clear scanner", error));
+        html5QrcodeScanner.clear().catch(e => console.log(e));
       };
-    }).catch(err => console.error("Errore caricamento html5-qrcode:", err));
+    }).catch(err => {
+      console.error("Errore html5-qrcode:", err);
+      alert("Libreria html5-qrcode mancante! Assicurati di aver fatto 'npm install html5-qrcode' e pushato il package.json");
+    });
   }, []);
 
-  return <div id="reader" style={{ width: '100%', height: '100%', backgroundColor: 'black' }}></div>;
+  if (isWeb) {
+    return <div id="reader" style={{ width: '100%', height: '100%', backgroundColor: '#fff' }}></div>;
+  }
+  return null;
 };
 
 export default function TrackOrderScreen({ navigation }) {
@@ -83,12 +85,8 @@ export default function TrackOrderScreen({ navigation }) {
   const [note, setNote] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // GESTIONE PERMESSI SOLO NATIVA
-  const [permission, requestPermission] = !isWeb && ExpoCamera.useCameraPermissions 
-    ? ExpoCamera.useCameraPermissions() 
-    : [null, null];
   
+  // Stato per lo scanner
   const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
@@ -103,7 +101,7 @@ export default function TrackOrderScreen({ navigation }) {
       console.log('✅ Utente caricato:', user?.username);
     } catch (error) {
       console.error('Errore caricamento utente:', error);
-      alertErrore('Errore', "Impossibile caricare l'utente");
+      alertErrore('Errore', 'Impossibile caricare l\'utente');
     }
   };
 
@@ -118,20 +116,13 @@ export default function TrackOrderScreen({ navigation }) {
     }
   };
 
-  // FUNZIONE APRI SCANNER (Gestisce Web e Mobile in modo diverso)
-  const startScanning = async () => {
-    if (!isWeb && !permission?.granted) {
-      const result = await requestPermission();
-      if (!result.granted) {
-        alertErrore('Errore', 'Permesso fotocamera negato. Abilitalo nelle impostazioni.');
-        return;
-      }
-    }
+  // Funzione per avviare lo scanner
+  const startScanning = () => {
     setIsScanning(true);
   };
 
-  // QUANDO LEGGE UN CODICE (Web o Mobile)
-  const handleBarcodeScanned = ({ type, data }) => {
+  // Funzione chiamata quando legge un codice
+  const handleBarcodeScanned = ({ data }) => {
     setIsScanning(false);
     if(data) {
       setItemCode(data.toUpperCase());
@@ -389,7 +380,7 @@ export default function TrackOrderScreen({ navigation }) {
             ))}
           </View>
 
-          {/* Input Codice e Bottone Scanner */}
+          {/* Input Codice */}
           <Text style={styles.label}>Numero {itemType}</Text>
           <View style={styles.inputRow}>
             <TextInput
@@ -401,10 +392,12 @@ export default function TrackOrderScreen({ navigation }) {
               autoCapitalize="characters"
               maxLength={itemType === 'ODL' ? 11 : 10}
             />
-            {/* Tasto visibile per TUTTI (Web e App) */}
-            <TouchableOpacity style={styles.scanButton} onPress={startScanning}>
-              <Text style={styles.scanButtonIcon}>📷</Text>
-            </TouchableOpacity>
+            {/* Tasto scanner abilitato per WEB */}
+            {isWeb && (
+              <TouchableOpacity style={styles.scanButton} onPress={startScanning}>
+                <Text style={styles.scanButtonIcon}>📷</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {itemType === 'JOB' && <Text style={styles.hint}>Massimo 10 caratteri maiuscoli</Text>}
@@ -539,20 +532,12 @@ export default function TrackOrderScreen({ navigation }) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* MODAL SCANNER IBRIDO WEB/MOBILE */}
+      {/* MODAL SCANNER ESCLUSIVO WEB */}
       <Modal visible={isScanning} animationType="slide" transparent={false}>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
-          {isWeb ? (
-            <View style={{ flex: 1, backgroundColor: '#fff' }}>
-               <WebScanner onScan={handleBarcodeScanned} />
-            </View>
-          ) : (
-            <NativeCameraView 
-              style={{ flex: 1 }} 
-              facing="back" 
-              onBarcodeScanned={handleBarcodeScanned} 
-            />
-          )}
+          <View style={{ flex: 1, backgroundColor: '#fff' }}>
+            <WebScanner onScan={handleBarcodeScanned} />
+          </View>
           <View style={styles.scannerControls}>
             <TouchableOpacity 
               style={styles.closeScannerBtn} 
@@ -642,7 +627,7 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10, // Aggiunto gap tra input testuale e bottone fotocamera
+    gap: 10,
   },
   input: {
     flex: 1,
@@ -659,7 +644,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   
-  // STILI NUOVI PER LO SCANNER
+  // STILI SCANNER
   scanButton: {
     backgroundColor: '#2D6BA8',
     padding: 12,
@@ -692,7 +677,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  // FINE STILI SCANNER
 
   operationSelector: {
     flexDirection: 'row',
