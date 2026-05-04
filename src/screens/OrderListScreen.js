@@ -31,39 +31,35 @@ export default function OrderListScreen({ navigation }) {
     }
   }
 
-function renderHistory({ item }) {
-    const isAdvancement = item.operation_type === 'avanzamento';
+  function renderHistory({ item }) {
+    const isAdvancement = item.operationtype === 'avanzamento';
     const movementColor = isAdvancement ? '#2D6BA8' : '#E53935';
-    
-    // Estrai i dati dell'ordine - gestisce sia array che oggetto singolo
+
     const orderData = Array.isArray(item.order) ? item.order[0] : item.order;
-    const orderNumber = orderData?.order_number || item.order_number || 'N/A';
-    const jobNumber = orderData?.job_number || item.job_number;
-    const staccatoNumber = orderData?.staccato_number || item.staccato_number;
+
+    const orderNumber = orderData?.ordernumber || item.ordernumber;
+    const jobNumber = orderData?.jobnumber || item.jobnumber;
+    const staccatoNumber = orderData?.staccatonumber || item.staccatonumber;
+
+    const mainTitle = jobNumber
+      ? `JOB: ${jobNumber}`
+      : staccatoNumber
+      ? `STACCATO: ${staccatoNumber}`
+      : orderNumber
+      ? `ODL: ${orderNumber}`
+      : 'Codice non disponibile';
 
     return (
       <View style={styles.historyCard}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.historyTitle}>
-            Ordine {orderNumber}
-          </Text>
-          {jobNumber && (
-            <Text style={styles.historyDetail}>
-              JOB: {jobNumber}
-            </Text>
-          )}
-          {staccatoNumber && (
-            <Text style={styles.historyDetail}>
-              Staccato: {staccatoNumber}
-            </Text>
-          )}
+          <Text style={styles.historyTitle}>{mainTitle}</Text>
 
           <Text style={[styles.historyMovement, { color: movementColor }]}>
-            {item.from_dept?.name || 'N/A'} → {item.to_dept?.name || 'N/A'}
+            {item.fromdept?.name || 'N/A'} → {item.todept?.name || 'N/A'}
           </Text>
 
           <Text style={styles.historyDetail}>
-            Operatore: {item.user?.full_name || item.user?.username || 'Sconosciuto'}
+            Operatore: {item.user?.fullname || item.user?.username || 'Sconosciuto'}
           </Text>
 
           {item.note && (
@@ -71,7 +67,7 @@ function renderHistory({ item }) {
           )}
 
           <Text style={styles.historyDate}>
-            {new Date(item.moved_at).toLocaleString('it-IT')}
+            {new Date(item.movedat).toLocaleString('it-IT')}
           </Text>
         </View>
 
