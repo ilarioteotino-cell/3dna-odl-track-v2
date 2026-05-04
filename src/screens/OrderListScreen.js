@@ -32,41 +32,28 @@ export default function OrderListScreen({ navigation }) {
   }
 
   function renderHistory({ item }) {
-    const isAdvancement = item.operationtype === 'AVANZAMENTO' || item.operationtype === 'avanzamento';
+    const isAdvancement = item.operation_type === 'avanzamento' || item.operation_type === 'AVANZAMENTO';
     const movementColor = isAdvancement ? '#2D6BA8' : '#E53935';
 
     const orderData = Array.isArray(item.order) ? item.order[0] : item.order;
 
-    const odl = orderData?.ordernumber || item.ordernumber || null;
-    const job = orderData?.jobnumber || item.jobnumber || null;
-    const staccato = orderData?.staccatonumber || item.staccatonumber || null;
+    const orderNumber = orderData?.order_number || item.order_number || null;
+    const jobNumber = orderData?.job_number || item.job_number || null;
+    const staccatoNumber = orderData?.staccato_number || item.staccato_number || null;
 
-    let codeLabel = 'Codice';
+    let codeLabel = 'CODICE';
     let codeValue = 'N/A';
 
-    if (job) {
+    if (jobNumber) {
       codeLabel = 'JOB';
-      codeValue = job;
-    } else if (odl) {
+      codeValue = jobNumber;
+    } else if (orderNumber) {
       codeLabel = 'ODL';
-      codeValue = odl;
-    } else if (staccato) {
+      codeValue = orderNumber;
+    } else if (staccatoNumber) {
       codeLabel = 'STACCATO';
-      codeValue = staccato;
+      codeValue = staccatoNumber;
     }
-
-    const fromDept =
-      item.fromdepartmentname || item.fromdept?.name || 'N/A';
-
-    const toDept =
-      item.todepartmentname || item.todept?.name || 'N/A';
-
-    const operatorName =
-      item.movedbyname || item.user?.fullname || item.user?.username || 'Sconosciuto';
-
-    const movedDate = item.movedat
-      ? new Date(item.movedat).toLocaleString('it-IT')
-      : 'Data non disponibile';
 
     return (
       <View style={styles.historyCard}>
@@ -80,19 +67,19 @@ export default function OrderListScreen({ navigation }) {
           </Text>
 
           <Text style={[styles.historyMovement, { color: movementColor }]}>
-            {fromDept} → {toDept}
+            {item.from_dept?.name || 'N/A'} → {item.to_dept?.name || 'N/A'}
           </Text>
 
           <Text style={styles.historyDetail}>
-            Operatore: {operatorName}
+            Operatore: {item.user?.full_name || item.user?.username || 'Sconosciuto'}
           </Text>
 
-          {item.note ? (
+          {item.note && (
             <Text style={styles.historyNote}>Nota: {item.note}</Text>
-          ) : null}
+          )}
 
           <Text style={styles.historyDate}>
-            {movedDate}
+            {item.moved_at ? new Date(item.moved_at).toLocaleString('it-IT') : 'Data non disponibile'}
           </Text>
         </View>
 
@@ -179,7 +166,7 @@ const styles = StyleSheet.create({
   },
   codeLabel: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: '#666',
     marginBottom: 2,
     letterSpacing: 0.5,
